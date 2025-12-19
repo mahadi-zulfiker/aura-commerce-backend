@@ -12,13 +12,23 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.GetProductsQueryDto = void 0;
 const class_transformer_1 = require("class-transformer");
 const class_validator_1 = require("class-validator");
-const sortOptions = ["featured", "newest", "price-low", "price-high", "rating"];
+const sortOptions = [
+    'featured',
+    'newest',
+    'price-low',
+    'price-high',
+    'rating',
+    'popularity',
+];
 class GetProductsQueryDto {
     page;
     limit;
     category;
     brand;
     search;
+    minPrice;
+    maxPrice;
+    minRating;
     sort;
 }
 exports.GetProductsQueryDto = GetProductsQueryDto;
@@ -51,6 +61,24 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], GetProductsQueryDto.prototype, "search", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], GetProductsQueryDto.prototype, "minPrice", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], GetProductsQueryDto.prototype, "maxPrice", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.IsNumber)(),
+    __metadata("design:type", Number)
+], GetProductsQueryDto.prototype, "minRating", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsIn)(sortOptions),

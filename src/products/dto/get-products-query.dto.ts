@@ -1,7 +1,21 @@
-import { Type } from "class-transformer";
-import { IsIn, IsInt, IsOptional, IsString, Min } from "class-validator";
+import { Type } from 'class-transformer';
+import {
+  IsIn,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+} from 'class-validator';
 
-const sortOptions = ["featured", "newest", "price-low", "price-high", "rating"] as const;
+const sortOptions = [
+  'featured',
+  'newest',
+  'price-low',
+  'price-high',
+  'rating',
+  'popularity',
+] as const;
 
 export class GetProductsQueryDto {
   @IsOptional()
@@ -27,6 +41,21 @@ export class GetProductsQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  minPrice?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  maxPrice?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  minRating?: number;
 
   @IsOptional()
   @IsIn(sortOptions)

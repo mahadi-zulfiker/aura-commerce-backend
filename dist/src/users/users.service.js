@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UsersService = void 0;
 const common_1 = require("@nestjs/common");
+const client_1 = require("@prisma/client");
 const prisma_service_1 = require("../database/prisma.service");
 let UsersService = class UsersService {
     prisma;
@@ -29,6 +30,8 @@ let UsersService = class UsersService {
                 avatar: true,
                 role: true,
                 status: true,
+                isEmailVerified: true,
+                lastLogin: true,
                 createdAt: true,
             },
         });
@@ -40,10 +43,12 @@ let UsersService = class UsersService {
     async findAll(page = 1, limit = 10, role, status) {
         const skip = (page - 1) * limit;
         const where = {};
-        if (role)
+        if (role && Object.values(client_1.UserRole).includes(role)) {
             where.role = role;
-        if (status)
+        }
+        if (status && Object.values(client_1.UserStatus).includes(status)) {
             where.status = status;
+        }
         const [users, total] = await Promise.all([
             this.prisma.user.findMany({
                 where,
@@ -89,7 +94,7 @@ let UsersService = class UsersService {
     async updateStatus(id, status) {
         return this.prisma.user.update({
             where: { id },
-            data: { status: status },
+            data: { status },
         });
     }
 };

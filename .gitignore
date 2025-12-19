@@ -1,5 +1,26 @@
-node_modules
-# Keep environment variables out of version control
-.env
+node_modules/
+dist/
+coverage/
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tsbuildinfo
+.pnpm-store/
 
-/generated/prisma
+# Env files
+.env
+.env.*
+
+# Prisma client artifacts (if generated outside node_modules)
+generated/
+
+# Cache/IDE
+.eslintcache
+.swc/
+.cache/
+.idea/
+.vscode/
+.DS_Store

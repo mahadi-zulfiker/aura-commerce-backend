@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CategoriesService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../database/prisma.service");
+const slugify_1 = require("../utils/slugify");
 let CategoriesService = class CategoriesService {
     prisma;
     constructor(prisma) {
@@ -20,7 +21,7 @@ let CategoriesService = class CategoriesService {
     async findAll() {
         const categories = await this.prisma.category.findMany({
             where: { isActive: true },
-            orderBy: [{ order: "asc" }, { name: "asc" }],
+            orderBy: [{ order: 'asc' }, { name: 'asc' }],
             include: {
                 _count: { select: { products: true } },
             },
@@ -29,9 +30,59 @@ let CategoriesService = class CategoriesService {
             id: category.id,
             name: category.name,
             slug: category.slug,
-            image: category.image ?? "",
+            image: category.image ?? '',
             productCount: category._count.products,
         }));
+    }
+    async findAllAdmin() {
+        return this.prisma.category.findMany({
+            orderBy: [{ order: 'asc' }, { name: 'asc' }],
+        });
+    }
+    async findBySlug(slug) {
+        const category = await this.prisma.category.findUnique({
+            where: { slug },
+        });
+        if (!category) {
+            throw new common_1.NotFoundException('Category not found');
+        }
+        return category;
+    }
+    async create(dto) {
+        const slug = dto.slug?.trim() || (0, slugify_1.slugify)(dto.name);
+        return this.prisma.category.create({
+            data: {
+                name: dto.name,
+                slug,
+                description: dto.description,
+                image: dto.image,
+                icon: dto.icon,
+                parentId: dto.parentId,
+                isActive: dto.isActive ?? true,
+                order: dto.order ?? 0,
+            },
+        });
+    }
+    async update(id, dto) {
+        const slug = dto.slug?.trim() ?? (dto.name ? (0, slugify_1.slugify)(dto.name) : undefined);
+        return this.prisma.category.update({
+            where: { id },
+            data: {
+                name: dto.name,
+                slug,
+                description: dto.description,
+                image: dto.image,
+                icon: dto.icon,
+                parentId: dto.parentId,
+                isActive: dto.isActive,
+                order: dto.order,
+            },
+        });
+    }
+    async remove(id) {
+        return this.prisma.category.delete({
+            where: { id },
+        });
     }
 };
 exports.CategoriesService = CategoriesService;

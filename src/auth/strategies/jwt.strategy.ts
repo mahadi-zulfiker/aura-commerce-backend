@@ -1,8 +1,8 @@
-import { Injectable, UnauthorizedException } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { PassportStrategy } from "@nestjs/passport";
-import { ExtractJwt, Strategy } from "passport-jwt";
-import { PrismaService } from "../../database/prisma.service";
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { PassportStrategy } from '@nestjs/passport';
+import { ExtractJwt, Strategy } from 'passport-jwt';
+import { PrismaService } from '../../database/prisma.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -10,9 +10,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private configService: ConfigService,
     private prisma: PrismaService,
   ) {
-    const secret = configService.get<string>("jwt.secret");
+    const secret = configService.get<string>('jwt.secret');
     if (!secret) {
-      throw new Error("JWT secret is not set");
+      throw new Error('JWT secret is not set');
     }
 
     super({
@@ -31,10 +31,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         status: true,
         firstName: true,
         lastName: true,
+        isEmailVerified: true,
       },
     });
 
-    if (!user || user.status !== "ACTIVE") {
+    if (!user || user.status !== 'ACTIVE') {
       throw new UnauthorizedException();
     }
 

@@ -19,9 +19,9 @@ let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(pas
     configService;
     prisma;
     constructor(configService, prisma) {
-        const secret = configService.get("jwt.secret");
+        const secret = configService.get('jwt.secret');
         if (!secret) {
-            throw new Error("JWT secret is not set");
+            throw new Error('JWT secret is not set');
         }
         super({
             jwtFromRequest: passport_jwt_1.ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -40,9 +40,10 @@ let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(pas
                 status: true,
                 firstName: true,
                 lastName: true,
+                isEmailVerified: true,
             },
         });
-        if (!user || user.status !== "ACTIVE") {
+        if (!user || user.status !== 'ACTIVE') {
             throw new common_1.UnauthorizedException();
         }
         return user;

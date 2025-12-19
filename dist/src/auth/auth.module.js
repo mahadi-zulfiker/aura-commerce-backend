@@ -14,6 +14,7 @@ const config_1 = require("@nestjs/config");
 const auth_service_1 = require("./auth.service");
 const auth_controller_1 = require("./auth.controller");
 const jwt_strategy_1 = require("./strategies/jwt.strategy");
+const email_service_1 = require("../utils/email.service");
 let AuthModule = class AuthModule {
 };
 exports.AuthModule = AuthModule;
@@ -24,11 +25,11 @@ exports.AuthModule = AuthModule = __decorate([
             jwt_1.JwtModule.registerAsync({
                 inject: [config_1.ConfigService],
                 useFactory: (configService) => {
-                    const secret = configService.get("jwt.secret");
+                    const secret = configService.get('jwt.secret');
                     if (!secret) {
-                        throw new Error("JWT secret is not set");
+                        throw new Error('JWT secret is not set');
                     }
-                    const expiresInRaw = configService.get("jwt.expiresIn") ?? "7d";
+                    const expiresInRaw = configService.get('jwt.expiresIn') ?? '7d';
                     const expiresIn = expiresInRaw;
                     return {
                         secret,
@@ -38,7 +39,7 @@ exports.AuthModule = AuthModule = __decorate([
             }),
         ],
         controllers: [auth_controller_1.AuthController],
-        providers: [auth_service_1.AuthService, jwt_strategy_1.JwtStrategy],
+        providers: [auth_service_1.AuthService, jwt_strategy_1.JwtStrategy, email_service_1.EmailService],
         exports: [auth_service_1.AuthService],
     })
 ], AuthModule);

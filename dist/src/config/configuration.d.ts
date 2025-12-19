@@ -21,5 +21,10 @@ declare const _default: () => {
         user: string | undefined;
         password: string | undefined;
     };
+    cloudinary: {
+        cloudName: string | undefined;
+        apiKey: string | undefined;
+        apiSecret: string | undefined;
+    };
 };
 export default _default;

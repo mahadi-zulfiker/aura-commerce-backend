@@ -1,3 +1,4 @@
+import { UserStatus } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 export declare class UsersService {
@@ -8,11 +9,13 @@ export declare class UsersService {
         email: string;
         role: import(".prisma/client").$Enums.UserRole;
         status: import(".prisma/client").$Enums.UserStatus;
+        isEmailVerified: boolean;
         firstName: string | null;
         lastName: string | null;
         phone: string | null;
         avatar: string | null;
         createdAt: Date;
+        lastLogin: Date | null;
     }>;
     findAll(page?: number, limit?: number, role?: string, status?: string): Promise<{
         data: {
@@ -39,7 +42,7 @@ export declare class UsersService {
         phone: string | null;
         avatar: string | null;
     }>;
-    updateStatus(id: string, status: string): Promise<{
+    updateStatus(id: string, status: UserStatus): Promise<{
         id: string;
         email: string;
         password: string;

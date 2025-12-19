@@ -4,9 +4,9 @@ import { PaymentsController } from './payments.controller';
 import { ConfigModule } from '@nestjs/config';
 
 @Module({
-    imports: [ConfigModule],
-    controllers: [PaymentsController],
-    providers: [PaymentsService],
-    exports: [PaymentsService],
+  imports: [ConfigModule],
+  controllers: [PaymentsController],
+  providers: [PaymentsService],
+  exports: [PaymentsService],
 })
-export class PaymentsModule { }
+export class PaymentsModule {}
