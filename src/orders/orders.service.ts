@@ -77,6 +77,9 @@ export class OrdersService {
 
         const couponCode = dto.couponCode?.toUpperCase();
         let coupon: Coupon | null = null;
+        let hasProductScope = false;
+        let hasCategoryScope = false;
+
         if (couponCode) {
           coupon = await tx.coupon.findUnique({
             where: { code: couponCode },
@@ -85,6 +88,9 @@ export class OrdersService {
           if (!coupon) {
             throw new BadRequestException('Coupon not found');
           }
+
+          hasProductScope = coupon.applicableProducts.length > 0;
+          hasCategoryScope = coupon.applicableCategories.length > 0;
 
           const now = new Date();
           if (
@@ -114,6 +120,7 @@ export class OrdersService {
           }
         }
 
+        let eligibleSubtotal = 0;
         for (const item of cart.items) {
           const product = item.product;
           let variantInfo: Prisma.InputJsonValue | null = null;
@@ -156,7 +163,8 @@ export class OrdersService {
             );
           }
 
-          subtotalAccumulator += unitPrice * item.quantity;
+          const lineTotal = unitPrice * item.quantity;
+          subtotalAccumulator += lineTotal;
 
           const orderItem: Prisma.OrderItemCreateManyOrderInput = {
             productId: product.id,
@@ -165,12 +173,29 @@ export class OrdersService {
             image: product.images[0]?.url ?? null,
             quantity: item.quantity,
             price: unitPrice,
-            total: unitPrice * item.quantity,
+            total: lineTotal,
           };
           if (variantInfo) {
             orderItem.variantInfo = variantInfo;
           }
           itemsToCreate.push(orderItem);
+
+          if (coupon) {
+            const matchesProduct =
+              hasProductScope &&
+              coupon.applicableProducts.includes(product.id);
+            const matchesCategory =
+              hasCategoryScope &&
+              coupon.applicableCategories.includes(product.categoryId);
+            const isEligible =
+              (!hasProductScope && !hasCategoryScope) ||
+              matchesProduct ||
+              matchesCategory;
+
+            if (isEligible) {
+              eligibleSubtotal += lineTotal;
+            }
+          }
 
           await tx.product.update({
             where: { id: product.id },
@@ -181,30 +206,48 @@ export class OrdersService {
           });
         }
 
+        const shippingCost = subtotalAccumulator >= 100 ? 0 : 9.99;
+        const taxAmount = 0;
         let discountAmount = 0;
         if (coupon) {
-          if (coupon.minPurchase && subtotalAccumulator < coupon.minPurchase) {
+          const hasScope = hasProductScope || hasCategoryScope;
+          const discountBase = hasScope ? eligibleSubtotal : subtotalAccumulator;
+
+          if (hasScope && eligibleSubtotal <= 0) {
+            throw new BadRequestException(
+              'Coupon is not applicable to items in cart',
+            );
+          }
+
+          if (coupon.minPurchase && discountBase < coupon.minPurchase) {
             throw new BadRequestException(
               'Cart total does not meet coupon requirements',
             );
           }
 
           if (coupon.type === 'PERCENTAGE') {
-            discountAmount = (subtotalAccumulator * coupon.value) / 100;
+            discountAmount = (discountBase * coupon.value) / 100;
           } else if (coupon.type === 'FIXED_AMOUNT') {
             discountAmount = coupon.value;
+          } else if (coupon.type === 'FREE_SHIPPING') {
+            discountAmount = shippingCost;
           }
 
           if (coupon.maxDiscount && discountAmount > coupon.maxDiscount) {
             discountAmount = coupon.maxDiscount;
           }
 
-          if (discountAmount > subtotalAccumulator) {
-            discountAmount = subtotalAccumulator;
+          const maxDiscountAllowed =
+            coupon.type === 'FREE_SHIPPING'
+              ? discountBase + shippingCost
+              : discountBase;
+          if (discountAmount > maxDiscountAllowed) {
+            discountAmount = maxDiscountAllowed;
           }
         }
 
-        const totalAmount = subtotalAccumulator - discountAmount;
+        const totalAmount =
+          subtotalAccumulator - discountAmount + shippingCost + taxAmount;
 
         const createdOrder = await tx.order.create({
           data: {
@@ -213,6 +256,8 @@ export class OrdersService {
             addressId: address.id,
             orderNumber,
             subtotal: subtotalAccumulator,
+            tax: taxAmount,
+            shippingCost,
             discount: discountAmount,
             total: totalAmount,
             paymentMethod: dto.paymentMethod,
