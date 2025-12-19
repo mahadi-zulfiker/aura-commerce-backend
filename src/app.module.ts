@@ -6,6 +6,7 @@ import { AuthModule } from "./auth/auth.module";
 import { ProductsModule } from "./products/products.module";
 import { CategoriesModule } from "./categories/categories.module";
 import { BrandsModule } from "./brands/brands.module";
+import { PaymentsModule } from "./payments/payments.module";
 import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
 
@@ -17,6 +18,7 @@ import { AppService } from "./app.service";
     }),
     DatabaseModule,
     AuthModule,
+    PaymentsModule,
     ProductsModule,
     CategoriesModule,
     BrandsModule,
@@ -24,4 +26,4 @@ import { AppService } from "./app.service";
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule { }

@@ -9,7 +9,7 @@ export declare class AuthController {
         user: {
             id: string;
             email: string;
-            role: import("@prisma/client").$Enums.UserRole;
+            role: import(".prisma/client").$Enums.UserRole;
             firstName: string | null;
             lastName: string | null;
         };
@@ -21,7 +21,7 @@ export declare class AuthController {
             email: string;
             firstName: string | null;
             lastName: string | null;
-            role: import("@prisma/client").$Enums.UserRole;
+            role: import(".prisma/client").$Enums.UserRole;
         };
     }>;
     getProfile(req: {

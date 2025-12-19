@@ -11,7 +11,7 @@ export declare class AuthService {
         user: {
             id: string;
             email: string;
-            role: import("@prisma/client").$Enums.UserRole;
+            role: import(".prisma/client").$Enums.UserRole;
             firstName: string | null;
             lastName: string | null;
         };
@@ -23,7 +23,7 @@ export declare class AuthService {
             email: string;
             firstName: string | null;
             lastName: string | null;
-            role: import("@prisma/client").$Enums.UserRole;
+            role: import(".prisma/client").$Enums.UserRole;
         };
     }>;
     private generateTokens;
