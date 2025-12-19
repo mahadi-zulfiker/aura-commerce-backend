@@ -14,6 +14,10 @@ const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const configuration_1 = __importDefault(require("./config/configuration"));
 const database_module_1 = require("./database/database.module");
+const auth_module_1 = require("./auth/auth.module");
+const products_module_1 = require("./products/products.module");
+const categories_module_1 = require("./categories/categories.module");
+const brands_module_1 = require("./brands/brands.module");
 const app_controller_1 = require("./app.controller");
 const app_service_1 = require("./app.service");
 let AppModule = class AppModule {
@@ -27,6 +31,10 @@ exports.AppModule = AppModule = __decorate([
                 load: [configuration_1.default],
             }),
             database_module_1.DatabaseModule,
+            auth_module_1.AuthModule,
+            products_module_1.ProductsModule,
+            categories_module_1.CategoriesModule,
+            brands_module_1.BrandsModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [app_service_1.AppService],
