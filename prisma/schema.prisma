@@ -58,6 +58,8 @@ model User {
   shop                Shop?
   couponsUsed         CouponUsage[]
   notifications       Notification[]
+  refreshTokens       RefreshToken[]
+  returnRequests      ReturnRequest[]
 
   @@index([email])
   @@index([role, status])
@@ -443,6 +445,7 @@ model Order {
   shop            Shop?         @relation(fields: [shopId], references: [id])
   address         Address       @relation(fields: [addressId], references: [id])
   items           OrderItem[]
+  returns         ReturnRequest[]
 
   @@index([userId])
   @@index([shopId])
@@ -470,6 +473,7 @@ model OrderItem {
 
   order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product     Product  @relation(fields: [productId], references: [id])
+  returnItems ReturnItem[]
 
   @@index([orderId])
   @@map("order_items")
@@ -671,5 +675,102 @@ model AuditLog {
   @@index([entity, entityId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ================================
+// STORE SETTINGS
+// ================================
+
+model StoreSettings {
+  id                String   @id @default(uuid())
+  shippingThreshold Float    @default(100)
+  baseShippingCost  Float    @default(9.99)
+  taxRate           Float    @default(0)
+  returnWindowDays  Int      @default(30)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("store_settings")
+}
+
+// ================================
+// RETURNS & RMA
+// ================================
+
+enum ReturnStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  RECEIVED
+  REFUNDED
+  CANCELLED
+}
+
+model ReturnRequest {
+  id           String       @id @default(uuid())
+  orderId      String
+  userId       String
+  status       ReturnStatus @default(REQUESTED)
+  reason       String
+  note         String?
+
+  approvedAt   DateTime?
+  rejectedAt   DateTime?
+  receivedAt   DateTime?
+  refundedAt   DateTime?
+  cancelledAt  DateTime?
+
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  order        Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items        ReturnItem[]
+
+  @@index([orderId])
+  @@index([userId])
+  @@index([status])
+  @@map("return_requests")
+}
+
+model ReturnItem {
+  id              String        @id @default(uuid())
+  returnRequestId String
+  orderItemId     String
+  quantity        Int
+
+  createdAt       DateTime      @default(now())
+
+  returnRequest   ReturnRequest @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+  orderItem       OrderItem     @relation(fields: [orderItemId], references: [id])
+
+  @@index([returnRequestId])
+  @@index([orderItemId])
+  @@map("return_items")
+}
+
+// ================================
+// AUTH SESSION / REFRESH TOKENS
+// ================================
+
+model RefreshToken {
+  id                 String        @id @default(uuid())
+  userId             String
+  tokenHash          String        @unique
+  expiresAt          DateTime
+  revokedAt          DateTime?
+  replacedByTokenId  String?
+
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replacedBy         RefreshToken? @relation("RefreshTokenRotation", fields: [replacedByTokenId], references: [id])
+  replaces           RefreshToken[] @relation("RefreshTokenRotation")
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
 }
 

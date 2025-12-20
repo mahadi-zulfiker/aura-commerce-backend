@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { raw } from 'express';
+import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
@@ -12,8 +13,27 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
 
+  app.use(cookieParser());
+
+  const frontendUrl = configService.get<string>('frontend.url');
+  const allowedOrigins = frontendUrl
+    ? frontendUrl.split(',').map((origin) => origin.trim()).filter(Boolean)
+    : [];
+
   app.enableCors({
-    origin: configService.get<string>('frontend.url') ?? true,
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.length === 0) {
+        callback(null, true);
+        return;
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error('Not allowed by CORS'), false);
+    },
     credentials: true,
   });
 

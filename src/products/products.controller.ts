@@ -14,6 +14,7 @@ import { UserRole } from '@prisma/client';
 import { Roles } from '../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { parsePagination } from '../utils/pagination';
 import { CreateProductDto } from './dto/create-product.dto';
 import { GetProductsQueryDto } from './dto/get-products-query.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -33,11 +34,14 @@ export class ProductsController {
   @Roles(UserRole.VENDOR)
   findMine(
     @Request() req: { user: { id: string } },
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
-    const pageNumber = page ? +page : 1;
-    const limitNumber = limit ? +limit : 12;
+    const { page: pageNumber, limit: limitNumber } = parsePagination(page, limit, {
+      page: 1,
+      limit: 12,
+      maxLimit: 100,
+    });
     return this.productsService.findMine(req.user.id, pageNumber, limitNumber);
   }
 

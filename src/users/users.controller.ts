@@ -12,6 +12,7 @@ import { UserRole } from '@prisma/client';
 import { Roles } from '../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { parsePagination } from '../utils/pagination';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { UsersService } from './users.service';
@@ -37,13 +38,16 @@ export class UsersController {
   @Get()
   @Roles(UserRole.ADMIN)
   findAll(
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
     @Query('role') role?: string,
     @Query('status') status?: string,
   ) {
-    const pageNumber = page ? +page : 1;
-    const limitNumber = limit ? +limit : 10;
+    const { page: pageNumber, limit: limitNumber } = parsePagination(page, limit, {
+      page: 1,
+      limit: 10,
+      maxLimit: 100,
+    });
     return this.usersService.findAll(pageNumber, limitNumber, role, status);
   }
 

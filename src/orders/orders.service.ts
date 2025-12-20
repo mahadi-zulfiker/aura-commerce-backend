@@ -15,16 +15,21 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { PaymentsService } from '../payments/payments.service';
+import { SettingsService } from '../settings/settings.service';
+import { restoreOrderInventory } from '../utils/order-inventory';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { UpdateOrderTrackingDto } from './dto/update-order-tracking.dto';
 
 @Injectable()
 export class OrdersService {
   constructor(
     private prisma: PrismaService,
     private paymentsService: PaymentsService,
+    private settingsService: SettingsService,
   ) {}
 
   async createOrder(userId: string, dto: CreateOrderDto) {
+    const settings = await this.settingsService.getSettings();
     const cart = await this.prisma.cart.findUnique({
       where: { userId },
       include: {
@@ -134,12 +139,11 @@ export class OrdersService {
             if (!variant || variant.productId !== product.id) {
               throw new BadRequestException('Variant not found');
             }
-            if (variant.stock < item.quantity) {
-              throw new BadRequestException(
-                `Insufficient stock for ${product.name}`,
-              );
-            }
-            if (product.stock < item.quantity) {
+            const variantUpdate = await tx.productVariant.updateMany({
+              where: { id: variant.id, stock: { gte: item.quantity } },
+              data: { stock: { decrement: item.quantity } },
+            });
+            if (variantUpdate.count === 0) {
               throw new BadRequestException(
                 `Insufficient stock for ${product.name}`,
               );
@@ -152,12 +156,20 @@ export class OrdersService {
               name: variant.name,
               attributes: variant.attributes,
             };
+          }
 
-            await tx.productVariant.update({
-              where: { id: variant.id },
-              data: { stock: { decrement: item.quantity } },
-            });
-          } else if (product.stock < item.quantity) {
+          const productUpdate = await tx.product.updateMany({
+            where: {
+              id: product.id,
+              status: ProductStatus.PUBLISHED,
+              stock: { gte: item.quantity },
+            },
+            data: {
+              stock: { decrement: item.quantity },
+              soldCount: { increment: item.quantity },
+            },
+          });
+          if (productUpdate.count === 0) {
             throw new BadRequestException(
               `Insufficient stock for ${product.name}`,
             );
@@ -197,17 +209,14 @@ export class OrdersService {
             }
           }
 
-          await tx.product.update({
-            where: { id: product.id },
-            data: {
-              stock: { decrement: item.quantity },
-              soldCount: { increment: item.quantity },
-            },
-          });
         }
 
-        const shippingCost = subtotalAccumulator >= 100 ? 0 : 9.99;
-        const taxAmount = 0;
+        const shippingCost =
+          subtotalAccumulator >= settings.shippingThreshold
+            ? 0
+            : settings.baseShippingCost;
+        const taxBase = Math.max(0, subtotalAccumulator - discountAmount);
+        const taxAmount = taxBase * settings.taxRate;
         let discountAmount = 0;
         if (coupon) {
           const hasScope = hasProductScope || hasCategoryScope;
@@ -321,8 +330,22 @@ export class OrdersService {
           where: { id: orderId },
           data: {
             paymentStatus: PaymentStatus.FAILED,
+            orderStatus: OrderStatus.CANCELLED,
+            cancelledAt: new Date(),
           },
         });
+        await this.prisma.couponUsage.deleteMany({
+          where: { orderId },
+        });
+        await restoreOrderInventory(
+          this.prisma,
+          orderItems.map((item) => ({
+            productId: item.productId,
+            quantity: item.quantity,
+            sku: item.sku,
+            variantInfo: item.variantInfo,
+          })),
+        );
         throw error;
       }
     }
@@ -440,12 +463,115 @@ export class OrdersService {
       paymentStatusUpdate.paymentStatus = PaymentStatus.REFUNDED;
     }
 
+    const shouldRestoreInventory =
+      status === OrderStatus.CANCELLED &&
+      order.orderStatus !== OrderStatus.CANCELLED &&
+      order.paymentStatus !== PaymentStatus.PAID;
+    const shouldRestoreRefund =
+      status === OrderStatus.REFUNDED &&
+      order.orderStatus !== OrderStatus.REFUNDED;
+
+    if (shouldRestoreInventory || shouldRestoreRefund) {
+      await restoreOrderInventory(
+        this.prisma,
+        order.items.map((item) => ({
+          productId: item.productId,
+          quantity: item.quantity,
+          sku: item.sku,
+          variantInfo: item.variantInfo,
+        })),
+      );
+
+      if (shouldRestoreInventory) {
+        await this.prisma.couponUsage.deleteMany({
+          where: { orderId: order.id },
+        });
+      }
+    }
+
     return this.prisma.order.update({
       where: { id: order.id },
       data: {
         orderStatus: status,
         ...paymentStatusUpdate,
         ...timestampData,
+      },
+    });
+  }
+
+  async updateTracking(
+    userId: string,
+    role: UserRole,
+    orderId: string,
+    dto: UpdateOrderTrackingDto,
+  ) {
+    const order = await this.getOrder(userId, role, orderId);
+
+    if (!dto.trackingNumber && !dto.carrier) {
+      throw new BadRequestException('Tracking update requires data');
+    }
+
+    const data: Prisma.OrderUpdateInput = {
+      trackingNumber: dto.trackingNumber ?? order.trackingNumber,
+      carrier: dto.carrier ?? order.carrier,
+    };
+
+    if (
+      dto.trackingNumber &&
+      (order.orderStatus === OrderStatus.PROCESSING ||
+        order.orderStatus === OrderStatus.CONFIRMED)
+    ) {
+      data.orderStatus = OrderStatus.SHIPPED;
+      data.shippedAt = new Date();
+    }
+
+    return this.prisma.order.update({
+      where: { id: order.id },
+      data,
+    });
+  }
+
+  async cancelOrder(userId: string, role: UserRole, orderId: string) {
+    const order = await this.getOrder(userId, role, orderId);
+
+    if (order.orderStatus === OrderStatus.CANCELLED) {
+      return order;
+    }
+
+    if (
+      order.orderStatus === OrderStatus.SHIPPED ||
+      order.orderStatus === OrderStatus.DELIVERED
+    ) {
+      throw new BadRequestException('Order cannot be cancelled after shipping');
+    }
+
+    if (order.paymentStatus === PaymentStatus.PAID) {
+      throw new BadRequestException('Paid orders require a refund');
+    }
+
+    await restoreOrderInventory(
+      this.prisma,
+      order.items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        sku: item.sku,
+        variantInfo: item.variantInfo,
+      })),
+    );
+
+    await this.prisma.couponUsage.deleteMany({
+      where: { orderId: order.id },
+    });
+
+    return this.prisma.order.update({
+      where: { id: order.id },
+      data: {
+        orderStatus: OrderStatus.CANCELLED,
+        paymentStatus:
+          order.paymentStatus === PaymentStatus.PENDING
+            ? PaymentStatus.FAILED
+            : order.paymentStatus,
+        cancelledAt: new Date(),
       },
     });
   }

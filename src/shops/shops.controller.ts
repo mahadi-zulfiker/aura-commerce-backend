@@ -14,6 +14,7 @@ import { ShopStatus, UserRole } from '@prisma/client';
 import { Roles } from '../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { parsePagination } from '../utils/pagination';
 import { CreateShopDto } from './dto/create-shop.dto';
 import { UpdateShopStatusDto } from './dto/update-shop-status.dto';
 import { UpdateShopDto } from './dto/update-shop.dto';
@@ -25,12 +26,15 @@ export class ShopsController {
 
   @Get()
   findAll(
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
     @Query('search') search?: string,
   ) {
-    const pageNumber = page ? +page : 1;
-    const limitNumber = limit ? +limit : 12;
+    const { page: pageNumber, limit: limitNumber } = parsePagination(page, limit, {
+      page: 1,
+      limit: 12,
+      maxLimit: 100,
+    });
     return this.shopsService.findAll(pageNumber, limitNumber, search);
   }
 
@@ -38,12 +42,15 @@ export class ShopsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   findAllAdmin(
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
     @Query('status') status?: ShopStatus,
   ) {
-    const pageNumber = page ? +page : 1;
-    const limitNumber = limit ? +limit : 12;
+    const { page: pageNumber, limit: limitNumber } = parsePagination(page, limit, {
+      page: 1,
+      limit: 12,
+      maxLimit: 100,
+    });
     return this.shopsService.findAllAdmin(pageNumber, limitNumber, status);
   }
 
@@ -55,11 +62,14 @@ export class ShopsController {
   @Get(':slug/products')
   getShopProducts(
     @Param('slug') slug: string,
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
-    const pageNumber = page ? +page : 1;
-    const limitNumber = limit ? +limit : 12;
+    const { page: pageNumber, limit: limitNumber } = parsePagination(page, limit, {
+      page: 1,
+      limit: 12,
+      maxLimit: 100,
+    });
     return this.shopsService.getShopProducts(slug, pageNumber, limitNumber);
   }
 

@@ -13,6 +13,7 @@ import { UserRole } from '@prisma/client';
 import { Roles } from '../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { parsePagination } from '../utils/pagination';
 import { CreateCouponDto } from './dto/create-coupon.dto';
 import { UpdateCouponDto } from './dto/update-coupon.dto';
 import { CouponsService } from './coupons.service';
@@ -24,9 +25,12 @@ export class CouponsController {
 
   @Get()
   @Roles(UserRole.ADMIN)
-  findAll(@Query('page') page?: number, @Query('limit') limit?: number) {
-    const pageNumber = page ? +page : 1;
-    const limitNumber = limit ? +limit : 20;
+  findAll(@Query('page') page?: string, @Query('limit') limit?: string) {
+    const { page: pageNumber, limit: limitNumber } = parsePagination(page, limit, {
+      page: 1,
+      limit: 20,
+      maxLimit: 100,
+    });
     return this.couponsService.findAll(pageNumber, limitNumber);
   }
 

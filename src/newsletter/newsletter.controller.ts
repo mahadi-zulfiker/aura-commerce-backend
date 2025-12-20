@@ -3,6 +3,7 @@ import { UserRole } from '@prisma/client';
 import { Roles } from '../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { parsePagination } from '../utils/pagination';
 import { SubscribeDto } from './dto/subscribe.dto';
 import { UnsubscribeDto } from './dto/unsubscribe.dto';
 import { NewsletterService } from './newsletter.service';
@@ -24,9 +25,12 @@ export class NewsletterController {
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  list(@Query('page') page?: number, @Query('limit') limit?: number) {
-    const pageNumber = page ? +page : 1;
-    const limitNumber = limit ? +limit : 20;
+  list(@Query('page') page?: string, @Query('limit') limit?: string) {
+    const { page: pageNumber, limit: limitNumber } = parsePagination(page, limit, {
+      page: 1,
+      limit: 20,
+      maxLimit: 100,
+    });
     return this.newsletterService.list(pageNumber, limitNumber);
   }
 }

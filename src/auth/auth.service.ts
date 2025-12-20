@@ -7,12 +7,18 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { UserRole } from '@prisma/client';
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../database/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { EmailService } from '../utils/email.service';
 import * as bcrypt from 'bcryptjs';
+
+type AuthTokens = {
+  accessToken: string;
+  refreshToken: string;
+  refreshExpiresAt: Date;
+};
 
 @Injectable()
 export class AuthService {
@@ -54,7 +60,7 @@ export class AuthService {
       },
     });
 
-    const tokens = await this.generateTokens(user.id, user.email, user.role);
+    const tokens = await this.issueTokens(user.id, user.email, user.role);
     const emailSent = await this.sendEmailVerification(
       user.email,
       emailVerifyToken,
@@ -65,7 +71,7 @@ export class AuthService {
       emailVerificationRequired: true,
       emailSent,
       verificationToken: this.exposeToken(emailSent, emailVerifyToken),
-      ...tokens,
+      tokens,
     };
   }
 
@@ -93,7 +99,7 @@ export class AuthService {
       data: { lastLogin: new Date() },
     });
 
-    const tokens = await this.generateTokens(user.id, user.email, user.role);
+    const tokens = await this.issueTokens(user.id, user.email, user.role);
 
     return {
       user: {
@@ -104,37 +110,62 @@ export class AuthService {
         role: user.role,
         isEmailVerified: user.isEmailVerified,
       },
-      ...tokens,
+      tokens,
     };
   }
 
   async refresh(refreshToken: string) {
-    const refreshSecret = this.getRefreshSecret();
-
-    let payload: { sub: string; email: string; role: UserRole };
-    try {
-      payload = await this.jwtService.verifyAsync(refreshToken, {
-        secret: refreshSecret,
-      });
-    } catch {
-      throw new UnauthorizedException('Invalid refresh token');
-    }
-
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        status: true,
+    const tokenRecord = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash: this.hashToken(refreshToken) },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            role: true,
+            status: true,
+            firstName: true,
+            lastName: true,
+            isEmailVerified: true,
+          },
+        },
       },
     });
 
-    if (!user || user.status !== 'ACTIVE') {
+    if (
+      !tokenRecord ||
+      tokenRecord.revokedAt ||
+      tokenRecord.expiresAt < new Date()
+    ) {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    return this.generateTokens(user.id, user.email, user.role);
+    if (!tokenRecord.user || tokenRecord.user.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    const rotated = await this.rotateRefreshToken(tokenRecord.id, tokenRecord.userId);
+    const accessToken = await this.jwtService.signAsync({
+      sub: tokenRecord.user.id,
+      email: tokenRecord.user.email,
+      role: tokenRecord.user.role,
+    });
+
+    return {
+      user: {
+        id: tokenRecord.user.id,
+        email: tokenRecord.user.email,
+        firstName: tokenRecord.user.firstName,
+        lastName: tokenRecord.user.lastName,
+        role: tokenRecord.user.role,
+        isEmailVerified: tokenRecord.user.isEmailVerified,
+      },
+      tokens: {
+        accessToken,
+        refreshToken: rotated.refreshToken,
+        refreshExpiresAt: rotated.refreshExpiresAt,
+      },
+    };
   }
 
   async requestPasswordReset(email: string) {
@@ -254,18 +285,45 @@ export class AuthService {
     };
   }
 
-  private async generateTokens(userId: string, email: string, role: UserRole) {
-    const payload = { sub: userId, email, role };
-    const accessToken = await this.jwtService.signAsync(payload);
-    const refreshToken = await this.jwtService.signAsync(payload, {
-      secret: this.getRefreshSecret(),
-      expiresIn: '30d',
+  async revokeRefreshToken(refreshToken: string) {
+    const tokenHash = this.hashToken(refreshToken);
+    const existing = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash },
     });
 
-    return {
-      accessToken,
-      refreshToken,
-    };
+    if (!existing || existing.revokedAt) {
+      return;
+    }
+
+    await this.prisma.refreshToken.update({
+      where: { id: existing.id },
+      data: { revokedAt: new Date() },
+    });
+  }
+
+  private async issueTokens(
+    userId: string,
+    email: string,
+    role: UserRole,
+  ): Promise<AuthTokens> {
+    const accessToken = await this.jwtService.signAsync({
+      sub: userId,
+      email,
+      role,
+    });
+
+    const refreshToken = this.generateRefreshToken();
+    const refreshExpiresAt = this.getRefreshExpiresAt();
+
+    await this.prisma.refreshToken.create({
+      data: {
+        userId,
+        tokenHash: this.hashToken(refreshToken),
+        expiresAt: refreshExpiresAt,
+      },
+    });
+
+    return { accessToken, refreshToken, refreshExpiresAt };
   }
 
   private async sendEmailVerification(email: string, token: string) {
@@ -284,6 +342,10 @@ export class AuthService {
     return randomBytes(32).toString('hex');
   }
 
+  private generateRefreshToken() {
+    return randomBytes(64).toString('hex');
+  }
+
   private exposeToken(emailSent: boolean, token: string) {
     if (emailSent || process.env.NODE_ENV === 'production') {
       return null;
@@ -291,11 +353,36 @@ export class AuthService {
     return token;
   }
 
-  private getRefreshSecret() {
-    const secret = this.configService.get<string>('jwt.refreshSecret');
-    if (!secret) {
-      throw new Error('JWT refresh secret is not set');
-    }
-    return secret;
+  private getRefreshExpiresAt() {
+    const days =
+      this.configService.get<number>('jwt.refreshExpiresInDays') ?? 30;
+    return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  }
+
+  private async rotateRefreshToken(tokenId: string, userId: string) {
+    const refreshToken = this.generateRefreshToken();
+    const refreshExpiresAt = this.getRefreshExpiresAt();
+
+    const newToken = await this.prisma.refreshToken.create({
+      data: {
+        userId,
+        tokenHash: this.hashToken(refreshToken),
+        expiresAt: refreshExpiresAt,
+      },
+    });
+
+    await this.prisma.refreshToken.update({
+      where: { id: tokenId },
+      data: {
+        revokedAt: new Date(),
+        replacedByTokenId: newToken.id,
+      },
+    });
+
+    return { refreshToken, refreshExpiresAt };
+  }
+
+  private hashToken(token: string) {
+    return createHash('sha256').update(token).digest('hex');
   }
 }

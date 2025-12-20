@@ -9,28 +9,27 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { ReturnStatus, UserRole } from '@prisma/client';
 import { Roles } from '../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { parsePagination } from '../utils/pagination';
-import { CreateOrderDto } from './dto/create-order.dto';
-import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
-import { UpdateOrderTrackingDto } from './dto/update-order-tracking.dto';
-import { OrdersService } from './orders.service';
+import { CreateReturnDto } from './dto/create-return.dto';
+import { UpdateReturnStatusDto } from './dto/update-return-status.dto';
+import { ReturnsService } from './returns.service';
 
-@Controller('orders')
+@Controller('returns')
 @UseGuards(JwtAuthGuard, RolesGuard)
-export class OrdersController {
-  constructor(private ordersService: OrdersService) {}
+export class ReturnsController {
+  constructor(private readonly returnsService: ReturnsService) {}
 
   @Post()
-  @Roles(UserRole.USER, UserRole.VENDOR, UserRole.ADMIN)
+  @Roles(UserRole.USER)
   create(
     @Request() req: { user: { id: string } },
-    @Body() dto: CreateOrderDto,
+    @Body() dto: CreateReturnDto,
   ) {
-    return this.ordersService.createOrder(req.user.id, dto);
+    return this.returnsService.createReturnRequest(req.user.id, dto);
   }
 
   @Get()
@@ -45,7 +44,7 @@ export class OrdersController {
       limit: 10,
       maxLimit: 100,
     });
-    return this.ordersService.listOrders(
+    return this.returnsService.listReturns(
       req.user.id,
       req.user.role,
       pageNumber,
@@ -59,7 +58,7 @@ export class OrdersController {
     @Request() req: { user: { id: string; role: UserRole } },
     @Param('id') id: string,
   ) {
-    return this.ordersService.getOrder(req.user.id, req.user.role, id);
+    return this.returnsService.getReturn(req.user.id, req.user.role, id);
   }
 
   @Patch(':id/status')
@@ -67,37 +66,22 @@ export class OrdersController {
   updateStatus(
     @Request() req: { user: { id: string; role: UserRole } },
     @Param('id') id: string,
-    @Body() dto: UpdateOrderStatusDto,
+    @Body() dto: UpdateReturnStatusDto,
   ) {
-    return this.ordersService.updateStatus(
+    return this.returnsService.updateStatus(
       req.user.id,
       req.user.role,
       id,
-      dto.status,
-    );
-  }
-
-  @Patch(':id/tracking')
-  @Roles(UserRole.VENDOR, UserRole.ADMIN)
-  updateTracking(
-    @Request() req: { user: { id: string; role: UserRole } },
-    @Param('id') id: string,
-    @Body() dto: UpdateOrderTrackingDto,
-  ) {
-    return this.ordersService.updateTracking(
-      req.user.id,
-      req.user.role,
-      id,
-      dto,
+      dto.status as ReturnStatus,
     );
   }
 
   @Post(':id/cancel')
   @Roles(UserRole.USER)
   cancel(
-    @Request() req: { user: { id: string; role: UserRole } },
+    @Request() req: { user: { id: string } },
     @Param('id') id: string,
   ) {
-    return this.ordersService.cancelOrder(req.user.id, req.user.role, id);
+    return this.returnsService.cancelReturn(req.user.id, id);
   }
 }

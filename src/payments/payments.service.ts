@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { OrderStatus, PaymentStatus } from '@prisma/client';
 import Stripe from 'stripe';
 import { PrismaService } from '../database/prisma.service';
+import { restoreOrderInventory } from '../utils/order-inventory';
 
 @Injectable()
 export class PaymentsService {
@@ -47,6 +48,21 @@ export class PaymentsService {
 
     if (!isAdmin && order.userId !== userId) {
       throw new BadRequestException('Order not found');
+    }
+
+    if (order.paymentStatus === PaymentStatus.PAID) {
+      throw new BadRequestException('Order is already paid');
+    }
+
+    if (
+      order.orderStatus === OrderStatus.CANCELLED ||
+      order.orderStatus === OrderStatus.REFUNDED
+    ) {
+      throw new BadRequestException('Order cannot be paid');
+    }
+
+    if (order.stripePaymentId) {
+      return this.stripe.paymentIntents.retrieve(order.stripePaymentId);
     }
 
     const intent = await this.createPaymentIntent({
@@ -97,10 +113,15 @@ export class PaymentsService {
   async refundPayment(orderId: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
+      include: { items: true },
     });
 
     if (!order || !order.stripePaymentId) {
       throw new BadRequestException('Order is not eligible for refund');
+    }
+
+    if (order.paymentStatus !== PaymentStatus.PAID) {
+      throw new BadRequestException('Order is not paid');
     }
 
     const refund = await this.stripe.refunds.create({
@@ -115,18 +136,40 @@ export class PaymentsService {
       },
     });
 
+    await restoreOrderInventory(
+      this.prisma,
+      order.items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        sku: item.sku,
+        variantInfo: item.variantInfo,
+      })),
+    );
+
     return refund;
   }
 
   private async handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
+    const order = await this.prisma.order.findFirst({
+      where: { stripePaymentId: paymentIntent.id },
+    });
+
+    if (!order) {
+      return;
+    }
+
+    if (order.paymentStatus === PaymentStatus.PAID) {
+      return;
+    }
+
     const latestCharge = paymentIntent.latest_charge;
     const transactionId =
       typeof latestCharge === 'string'
         ? latestCharge
         : (latestCharge?.id ?? null);
 
-    await this.prisma.order.updateMany({
-      where: { stripePaymentId: paymentIntent.id },
+    await this.prisma.order.update({
+      where: { id: order.id },
       data: {
         paymentStatus: PaymentStatus.PAID,
         orderStatus: OrderStatus.CONFIRMED,
@@ -137,14 +180,44 @@ export class PaymentsService {
   }
 
   private async handlePaymentFailed(paymentIntent: Stripe.PaymentIntent) {
-    await this.prisma.order.updateMany({
+    const order = await this.prisma.order.findFirst({
       where: { stripePaymentId: paymentIntent.id },
+      include: { items: true },
+    });
+
+    if (!order) {
+      return;
+    }
+
+    if (
+      order.paymentStatus !== PaymentStatus.PENDING ||
+      order.orderStatus === OrderStatus.CANCELLED
+    ) {
+      return;
+    }
+
+    await this.prisma.order.update({
+      where: { id: order.id },
       data: {
         paymentStatus: PaymentStatus.FAILED,
         orderStatus: OrderStatus.CANCELLED,
         cancelledAt: new Date(),
       },
     });
+
+    await this.prisma.couponUsage.deleteMany({
+      where: { orderId: order.id },
+    });
+
+    await restoreOrderInventory(
+      this.prisma,
+      order.items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        sku: item.sku,
+        variantInfo: item.variantInfo,
+      })),
+    );
   }
 
   private async handleRefund(charge: Stripe.Charge) {
@@ -157,13 +230,36 @@ export class PaymentsService {
       return;
     }
 
-    await this.prisma.order.updateMany({
+    const order = await this.prisma.order.findFirst({
       where: { stripePaymentId: paymentIntentId },
+      include: { items: true },
+    });
+
+    if (!order) {
+      return;
+    }
+
+    if (order.paymentStatus === PaymentStatus.REFUNDED) {
+      return;
+    }
+
+    await this.prisma.order.update({
+      where: { id: order.id },
       data: {
         paymentStatus: PaymentStatus.REFUNDED,
         orderStatus: OrderStatus.REFUNDED,
         cancelledAt: new Date(),
       },
     });
+
+    await restoreOrderInventory(
+      this.prisma,
+      order.items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        sku: item.sku,
+        variantInfo: item.variantInfo,
+      })),
+    );
   }
 }

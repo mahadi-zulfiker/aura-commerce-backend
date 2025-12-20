@@ -8,6 +8,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Roles } from '../common/decorators/roles.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -42,6 +43,7 @@ export class PaymentsController {
 
   @Post('webhook')
   @HttpCode(200)
+  @SkipThrottle()
   handleWebhook(
     @Req() req: { body: Buffer },
     @Headers('stripe-signature') signature?: string,

@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { seconds, ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import configuration from './config/configuration';
 import { DatabaseModule } from './database/database.module';
 import { AuthModule } from './auth/auth.module';
@@ -19,6 +19,8 @@ import { WishlistModule } from './wishlist/wishlist.module';
 import { NewsletterModule } from './newsletter/newsletter.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { UploadsModule } from './uploads/uploads.module';
+import { SettingsModule } from './settings/settings.module';
+import { ReturnsModule } from './returns/returns.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -30,7 +32,7 @@ import { AppService } from './app.service';
     }),
     ThrottlerModule.forRoot([
       {
-        ttl: 60,
+        ttl: seconds(60),
         limit: 60,
       },
     ]),
@@ -50,6 +52,8 @@ import { AppService } from './app.service';
     NewsletterModule,
     ReviewsModule,
     UploadsModule,
+    SettingsModule,
+    ReturnsModule,
   ],
   controllers: [AppController],
   providers: [
