@@ -58,6 +58,12 @@ export class GetProductsQueryDto {
   minRating?: number;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  featured?: number; // 0 or 1 for boolean simulation in query param
+
+  @IsOptional()
   @IsIn(sortOptions)
   sort?: (typeof sortOptions)[number];
 }

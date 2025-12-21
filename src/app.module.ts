@@ -21,6 +21,8 @@ import { ReviewsModule } from './reviews/reviews.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { SettingsModule } from './settings/settings.module';
 import { ReturnsModule } from './returns/returns.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 
@@ -53,7 +55,10 @@ import { AppService } from './app.service';
     ReviewsModule,
     UploadsModule,
     SettingsModule,
+    SettingsModule,
     ReturnsModule,
+    NotificationsModule,
+    AnalyticsModule,
   ],
   controllers: [AppController],
   providers: [
@@ -64,4 +69,4 @@ import { AppService } from './app.service';
     },
   ],
 })
-export class AppModule {}
+export class AppModule { }

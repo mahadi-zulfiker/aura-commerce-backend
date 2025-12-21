@@ -20,7 +20,7 @@ type ProductWithRelations = Prisma.ProductGetPayload<{
 
 @Injectable()
 export class ProductsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   async findAll(query: GetProductsQueryDto) {
     const page = query.page ?? 1;
@@ -61,6 +61,10 @@ export class ProductsService {
 
     if (query.minRating !== undefined) {
       where.rating = { gte: query.minRating };
+    }
+
+    if (query.featured !== undefined) {
+      where.isFeatured = query.featured === 1;
     }
 
     if (query.minPrice !== undefined || query.maxPrice !== undefined) {
@@ -424,9 +428,9 @@ export class ProductsService {
 
     const tags = product.metaKeywords
       ? product.metaKeywords
-          .split(',')
-          .map((tag) => tag.trim())
-          .filter(Boolean)
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter(Boolean)
       : [];
 
     const specifications: Record<string, string> = {};
