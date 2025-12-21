@@ -16,6 +16,7 @@ import {
 import { PrismaService } from '../database/prisma.service';
 import { PaymentsService } from '../payments/payments.service';
 import { SettingsService } from '../settings/settings.service';
+import { EmailService } from '../utils/email.service';
 import { restoreOrderInventory } from '../utils/order-inventory';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderTrackingDto } from './dto/update-order-tracking.dto';
@@ -26,6 +27,7 @@ export class OrdersService {
     private prisma: PrismaService,
     private paymentsService: PaymentsService,
     private settingsService: SettingsService,
+    private emailService: EmailService,
   ) {}
 
   async createOrder(userId: string, dto: CreateOrderDto) {
@@ -215,9 +217,8 @@ export class OrdersService {
           subtotalAccumulator >= settings.shippingThreshold
             ? 0
             : settings.baseShippingCost;
-        const taxBase = Math.max(0, subtotalAccumulator - discountAmount);
-        const taxAmount = taxBase * settings.taxRate;
         let discountAmount = 0;
+        let itemDiscount = 0;
         if (coupon) {
           const hasScope = hasProductScope || hasCategoryScope;
           const discountBase = hasScope ? eligibleSubtotal : subtotalAccumulator;
@@ -253,8 +254,13 @@ export class OrdersService {
           if (discountAmount > maxDiscountAllowed) {
             discountAmount = maxDiscountAllowed;
           }
+
+          itemDiscount =
+            coupon.type === 'FREE_SHIPPING' ? 0 : discountAmount;
         }
 
+        const taxBase = Math.max(0, subtotalAccumulator - itemDiscount);
+        const taxAmount = taxBase * settings.taxRate;
         const totalAmount =
           subtotalAccumulator - discountAmount + shippingCost + taxAmount;
 
@@ -357,6 +363,14 @@ export class OrdersService {
         address: true,
       },
     });
+
+    if (order) {
+      await this.sendOrderEmail(userId, `Order ${order.orderNumber} received`, [
+        `We received your order ${order.orderNumber}.`,
+        `Order total: $${order.total.toFixed(2)}.`,
+        `Payment method: ${this.formatLabel(order.paymentMethod)}.`,
+      ]);
+    }
 
     return {
       order,
@@ -489,7 +503,7 @@ export class OrdersService {
       }
     }
 
-    return this.prisma.order.update({
+    const updatedOrder = await this.prisma.order.update({
       where: { id: order.id },
       data: {
         orderStatus: status,
@@ -497,6 +511,28 @@ export class OrdersService {
         ...timestampData,
       },
     });
+
+    if (status !== order.orderStatus) {
+      const statusLabel = this.formatLabel(status);
+      const lines = [
+        `Your order ${updatedOrder.orderNumber} is now ${statusLabel.toLowerCase()}.`,
+      ];
+
+      if (status === OrderStatus.SHIPPED && updatedOrder.trackingNumber) {
+        const carrierLabel = updatedOrder.carrier
+          ? ` (${updatedOrder.carrier})`
+          : '';
+        lines.push(`Tracking number: ${updatedOrder.trackingNumber}${carrierLabel}.`);
+      }
+
+      await this.sendOrderEmail(
+        updatedOrder.userId,
+        `Order ${updatedOrder.orderNumber} ${statusLabel}`,
+        lines,
+      );
+    }
+
+    return updatedOrder;
   }
 
   async updateTracking(
@@ -525,10 +561,29 @@ export class OrdersService {
       data.shippedAt = new Date();
     }
 
-    return this.prisma.order.update({
+    const updatedOrder = await this.prisma.order.update({
       where: { id: order.id },
       data,
     });
+
+    const details: string[] = [
+      `Tracking update for order ${updatedOrder.orderNumber}.`,
+    ];
+
+    if (updatedOrder.trackingNumber) {
+      details.push(`Tracking number: ${updatedOrder.trackingNumber}.`);
+    }
+    if (updatedOrder.carrier) {
+      details.push(`Carrier: ${updatedOrder.carrier}.`);
+    }
+
+    await this.sendOrderEmail(
+      updatedOrder.userId,
+      `Tracking update for ${updatedOrder.orderNumber}`,
+      details,
+    );
+
+    return updatedOrder;
   }
 
   async cancelOrder(userId: string, role: UserRole, orderId: string) {
@@ -563,7 +618,7 @@ export class OrdersService {
       where: { orderId: order.id },
     });
 
-    return this.prisma.order.update({
+    const updatedOrder = await this.prisma.order.update({
       where: { id: order.id },
       data: {
         orderStatus: OrderStatus.CANCELLED,
@@ -574,6 +629,55 @@ export class OrdersService {
         cancelledAt: new Date(),
       },
     });
+
+    await this.sendOrderEmail(
+      updatedOrder.userId,
+      `Order ${updatedOrder.orderNumber} cancelled`,
+      [
+        `Your order ${updatedOrder.orderNumber} has been cancelled.`,
+        'If you have questions, reply to this email or contact support.',
+      ],
+    );
+
+    return updatedOrder;
+  }
+
+  private async sendOrderEmail(
+    userId: string,
+    subject: string,
+    lines: string[],
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, firstName: true },
+    });
+
+    if (!user?.email) {
+      return;
+    }
+
+    const greeting = user.firstName ? `Hi ${user.firstName},` : 'Hi there,';
+    const closing = 'Thanks for shopping with Aura Commerce.';
+    const htmlLines = [greeting, ...lines, closing]
+      .map((line) => `<p>${line}</p>`)
+      .join('');
+    const text = [greeting, ...lines, closing].join('\n');
+
+    try {
+      await this.emailService.sendMail({
+        to: user.email,
+        subject,
+        html: htmlLines,
+        text,
+      });
+    } catch (error) {
+      return;
+    }
+  }
+
+  private formatLabel(value: string) {
+    const normalized = value.toLowerCase().replace(/_/g, ' ');
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1);
   }
 
   private generateOrderNumber() {

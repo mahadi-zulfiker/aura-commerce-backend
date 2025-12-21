@@ -14,6 +14,7 @@ import {
 import { PrismaService } from '../database/prisma.service';
 import { PaymentsService } from '../payments/payments.service';
 import { SettingsService } from '../settings/settings.service';
+import { EmailService } from '../utils/email.service';
 import { restoreOrderInventory } from '../utils/order-inventory';
 import { CreateReturnDto } from './dto/create-return.dto';
 
@@ -23,6 +24,7 @@ export class ReturnsService {
     private prisma: PrismaService,
     private paymentsService: PaymentsService,
     private settingsService: SettingsService,
+    private emailService: EmailService,
   ) {}
 
   async createReturnRequest(userId: string, dto: CreateReturnDto) {
@@ -84,7 +86,9 @@ export class ReturnsService {
             quantity: item.quantity,
           }));
 
-    const returnItems: Prisma.ReturnItemCreateManyInput[] = [];
+    const returnItems: Array<
+      Pick<Prisma.ReturnItemCreateManyInput, 'orderItemId' | 'quantity'>
+    > = [];
     for (const item of requestedItems) {
       const orderItem = orderItems.get(item.orderItemId);
       if (!orderItem) {
@@ -101,7 +105,17 @@ export class ReturnsService {
       });
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const requestedQuantities = new Map(
+      returnItems.map((item) => [item.orderItemId, item.quantity]),
+    );
+    const isFullReturn = order.items.every(
+      (item) => requestedQuantities.get(item.id) === item.quantity,
+    );
+    if (!isFullReturn) {
+      throw new BadRequestException('Partial returns are not supported yet');
+    }
+
+    const createdRequest = await this.prisma.$transaction(async (tx) => {
       const request = await tx.returnRequest.create({
         data: {
           orderId: order.id,
@@ -133,6 +147,18 @@ export class ReturnsService {
         },
       });
     });
+
+    await this.sendReturnEmail(
+      userId,
+      `Return request received for ${createdRequest?.order.orderNumber ?? 'your order'}`,
+      [
+        `We received your return request for order ${createdRequest?.order.orderNumber ?? order.orderNumber}.`,
+        `Reason: ${createdRequest?.reason ?? dto.reason}.`,
+        `Status: ${createdRequest?.status ?? ReturnStatus.REQUESTED}.`,
+      ],
+    );
+
+    return createdRequest;
   }
 
   async listReturns(userId: string, role: UserRole, page = 1, limit = 10) {
@@ -266,20 +292,23 @@ export class ReturnsService {
     } else if (status === ReturnStatus.RECEIVED) {
       data.receivedAt = now;
     } else if (status === ReturnStatus.REFUNDED) {
+      const returnInventory = request.items.map((item) => ({
+        productId: item.orderItem.productId,
+        quantity: item.quantity,
+        sku: item.orderItem.sku,
+        variantInfo: item.orderItem.variantInfo,
+      }));
       if (
         request.order.paymentMethod === PaymentMethod.CARD &&
         request.order.paymentStatus === PaymentStatus.PAID
       ) {
-        await this.paymentsService.refundPayment(request.orderId);
+        await this.paymentsService.refundPayment(request.orderId, {
+          sendEmail: false,
+        });
       } else {
         await restoreOrderInventory(
           this.prisma,
-          request.order.items.map((item) => ({
-            productId: item.productId,
-            quantity: item.quantity,
-            sku: item.sku,
-            variantInfo: item.variantInfo,
-          })),
+          returnInventory,
         );
 
         await this.prisma.order.update({
@@ -296,7 +325,7 @@ export class ReturnsService {
       data.cancelledAt = now;
     }
 
-    return this.prisma.returnRequest.update({
+    const updatedRequest = await this.prisma.returnRequest.update({
       where: { id: request.id },
       data,
       include: {
@@ -319,6 +348,18 @@ export class ReturnsService {
         },
       },
     });
+
+    const statusLabel = this.formatLabel(status);
+    await this.sendReturnEmail(
+      updatedRequest.userId,
+      `Return ${updatedRequest.order.orderNumber} ${statusLabel}`,
+      [
+        `Your return request for order ${updatedRequest.order.orderNumber} is now ${statusLabel.toLowerCase()}.`,
+        `Status: ${statusLabel}.`,
+      ],
+    );
+
+    return updatedRequest;
   }
 
   async cancelReturn(userId: string, returnId: string) {
@@ -328,12 +369,60 @@ export class ReturnsService {
       throw new BadRequestException('Return request cannot be cancelled');
     }
 
-    return this.prisma.returnRequest.update({
+    const updatedRequest = await this.prisma.returnRequest.update({
       where: { id: request.id },
       data: {
         status: ReturnStatus.CANCELLED,
         cancelledAt: new Date(),
       },
     });
+
+    await this.sendReturnEmail(
+      request.userId,
+      `Return ${request.order.orderNumber} cancelled`,
+      [
+        `Your return request for order ${request.order.orderNumber} has been cancelled.`,
+      ],
+    );
+
+    return updatedRequest;
+  }
+
+  private async sendReturnEmail(
+    userId: string,
+    subject: string,
+    lines: string[],
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, firstName: true },
+    });
+
+    if (!user?.email) {
+      return;
+    }
+
+    const greeting = user.firstName ? `Hi ${user.firstName},` : 'Hi there,';
+    const closing = 'Thanks for shopping with Aura Commerce.';
+    const html = [greeting, ...lines, closing]
+      .map((line) => `<p>${line}</p>`)
+      .join('');
+    const text = [greeting, ...lines, closing].join('\n');
+
+    try {
+      await this.emailService.sendMail({
+        to: user.email,
+        subject,
+        html,
+        text,
+      });
+    } catch (error) {
+      return;
+    }
+  }
+
+  private formatLabel(value: string) {
+    const normalized = value.toLowerCase().replace(/_/g, ' ');
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1);
   }
 }

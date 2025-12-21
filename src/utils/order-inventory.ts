@@ -1,10 +1,13 @@
-import type { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 
 type OrderItemSnapshot = {
   productId: string;
   quantity: number;
   sku: string;
-  variantInfo?: Prisma.JsonValue | null;
+  variantInfo?:
+    | Prisma.InputJsonValue
+    | Prisma.NullableJsonNullValueInput
+    | null;
 };
 
 export async function restoreOrderInventory(
@@ -25,7 +28,13 @@ export async function restoreOrderInventory(
         },
       });
 
-      if (item.variantInfo) {
+      const hasVariant =
+        item.variantInfo !== null &&
+        item.variantInfo !== undefined &&
+        item.variantInfo !== Prisma.DbNull &&
+        item.variantInfo !== Prisma.JsonNull;
+
+      if (hasVariant) {
         await tx.productVariant.updateMany({
           where: { sku: item.sku, productId: item.productId },
           data: { stock: { increment: item.quantity } },

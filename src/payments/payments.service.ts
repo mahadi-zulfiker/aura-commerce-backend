@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { OrderStatus, PaymentStatus } from '@prisma/client';
 import Stripe from 'stripe';
 import { PrismaService } from '../database/prisma.service';
+import { EmailService } from '../utils/email.service';
 import { restoreOrderInventory } from '../utils/order-inventory';
 
 @Injectable()
@@ -12,6 +13,7 @@ export class PaymentsService {
   constructor(
     private configService: ConfigService,
     private prisma: PrismaService,
+    private emailService: EmailService,
   ) {
     const secretKey = this.configService.get<string>('stripe.secretKey');
     if (!secretKey) {
@@ -110,7 +112,10 @@ export class PaymentsService {
     return { received: true };
   }
 
-  async refundPayment(orderId: string) {
+  async refundPayment(
+    orderId: string,
+    options?: { sendEmail?: boolean },
+  ) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: { items: true },
@@ -146,6 +151,21 @@ export class PaymentsService {
       })),
     );
 
+    if (options?.sendEmail !== false) {
+      const refundedAmount =
+        refund.amount !== null && refund.amount !== undefined
+          ? refund.amount / 100
+          : order.total;
+      await this.sendPaymentEmail(
+        order.userId,
+        `Refund issued for order ${order.orderNumber}`,
+        [
+          `Your refund for order ${order.orderNumber} has been issued.`,
+          `Refunded amount: $${refundedAmount.toFixed(2)}.`,
+        ],
+      );
+    }
+
     return refund;
   }
 
@@ -177,6 +197,15 @@ export class PaymentsService {
         transactionId,
       },
     });
+
+    await this.sendPaymentEmail(
+      order.userId,
+      `Payment received for order ${order.orderNumber}`,
+      [
+        `We received your payment for order ${order.orderNumber}.`,
+        `Total paid: $${order.total.toFixed(2)}.`,
+      ],
+    );
   }
 
   private async handlePaymentFailed(paymentIntent: Stripe.PaymentIntent) {
@@ -217,6 +246,15 @@ export class PaymentsService {
         sku: item.sku,
         variantInfo: item.variantInfo,
       })),
+    );
+
+    await this.sendPaymentEmail(
+      order.userId,
+      `Payment failed for order ${order.orderNumber}`,
+      [
+        `We could not process payment for order ${order.orderNumber}.`,
+        'Your order has been cancelled. Please place the order again if needed.',
+      ],
     );
   }
 
@@ -261,5 +299,47 @@ export class PaymentsService {
         variantInfo: item.variantInfo,
       })),
     );
+
+    await this.sendPaymentEmail(
+      order.userId,
+      `Refund processed for order ${order.orderNumber}`,
+      [
+        `A refund was processed for order ${order.orderNumber}.`,
+        `Refunded amount: $${(charge.amount_refunded / 100).toFixed(2)}.`,
+      ],
+    );
+  }
+
+  private async sendPaymentEmail(
+    userId: string,
+    subject: string,
+    lines: string[],
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, firstName: true },
+    });
+
+    if (!user?.email) {
+      return;
+    }
+
+    const greeting = user.firstName ? `Hi ${user.firstName},` : 'Hi there,';
+    const closing = 'Thanks for shopping with Aura Commerce.';
+    const html = [greeting, ...lines, closing]
+      .map((line) => `<p>${line}</p>`)
+      .join('');
+    const text = [greeting, ...lines, closing].join('\n');
+
+    try {
+      await this.emailService.sendMail({
+        to: user.email,
+        subject,
+        html,
+        text,
+      });
+    } catch (error) {
+      return;
+    }
   }
 }
