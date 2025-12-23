@@ -1,4 +1,4 @@
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -9,65 +9,83 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  const configService = app.get(ConfigService);
+let app: INestApplication;
 
-  app.use(cookieParser());
+export async function getApp(): Promise<INestApplication> {
+  if (!app) {
+    app = await NestFactory.create(AppModule);
+    const configService = app.get(ConfigService);
 
-  const frontendUrl = configService.get<string>('frontend.url');
-  const allowedOrigins = frontendUrl
-    ? frontendUrl.split(',').map((origin) => origin.trim()).filter(Boolean)
-    : [];
+    app.use(cookieParser());
 
-  app.enableCors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.length === 0) {
-        callback(null, true);
-        return;
-      }
+    const frontendUrl = configService.get<string>('frontend.url');
+    const allowedOrigins = frontendUrl
+      ? frontendUrl.split(',').map((origin) => origin.trim()).filter(Boolean)
+      : [];
 
-      if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-        return;
-      }
+    app.enableCors({
+      origin: (origin, callback) => {
+        if (!origin || allowedOrigins.length === 0) {
+          callback(null, true);
+          return;
+        }
 
-      callback(new Error('Not allowed by CORS'), false);
-    },
-    credentials: true,
-  });
+        if (allowedOrigins.includes(origin)) {
+          callback(null, true);
+          return;
+        }
 
-  app.use('/payments/webhook', raw({ type: 'application/json' }));
+        callback(new Error('Not allowed by CORS'), false);
+      },
+      credentials: true,
+    });
 
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      transform: true,
-      forbidNonWhitelisted: true,
-    }),
-  );
-  app.useGlobalFilters(new HttpExceptionFilter());
-  app.useGlobalInterceptors(
-    new LoggingInterceptor(),
-    new ResponseInterceptor(),
-  );
+    app.use('/payments/webhook', raw({ type: 'application/json' }));
 
-  if (process.env.NODE_ENV !== 'production') {
-    const swaggerConfig = new DocumentBuilder()
-      .setTitle('Aura Commerce API')
-      .setDescription('API documentation for Aura Commerce')
-      .setVersion('1.0')
-      .addBearerAuth()
-      .build();
-    const document = SwaggerModule.createDocument(app, swaggerConfig);
-    SwaggerModule.setup('docs', app, document);
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        transform: true,
+        forbidNonWhitelisted: true,
+      }),
+    );
+    app.useGlobalFilters(new HttpExceptionFilter());
+    app.useGlobalInterceptors(
+      new LoggingInterceptor(),
+      new ResponseInterceptor(),
+    );
+
+    if (process.env.NODE_ENV !== 'production') {
+      const swaggerConfig = new DocumentBuilder()
+        .setTitle('Aura Commerce API')
+        .setDescription('API documentation for Aura Commerce')
+        .setVersion('1.0')
+        .addBearerAuth()
+        .build();
+      const document = SwaggerModule.createDocument(app, swaggerConfig);
+      SwaggerModule.setup('docs', app, document);
+    }
+    await app.init();
   }
-
-  const port = configService.get<number>('port') ?? 4000;
-  await app.listen(port);
+  return app;
 }
 
-void bootstrap().catch((error) => {
-  console.error('Failed to start Aura Commerce API', error);
-  process.exit(1);
-});
+async function bootstrap() {
+  const application = await getApp();
+  const configService = application.get(ConfigService);
+  const port = configService.get<number>('port') ?? 4000;
+  await application.listen(port);
+}
+
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+  bootstrap().catch((error) => {
+    console.error('Failed to start Aura Commerce API', error);
+    process.exit(1);
+  });
+}
+
+export default async (req: any, res: any) => {
+  const application = await getApp();
+  const instance = application.getHttpAdapter().getInstance();
+  instance(req, res);
+};
