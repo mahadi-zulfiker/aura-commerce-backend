@@ -25,7 +25,8 @@ export async function getApp(): Promise<INestApplication> {
 
     app.enableCors({
       origin: (origin, callback) => {
-        if (!origin || allowedOrigins.length === 0) {
+        // Allow local development and specified origins
+        if (!origin || process.env.NODE_ENV !== 'production') {
           callback(null, true);
           return;
         }
@@ -35,9 +36,17 @@ export async function getApp(): Promise<INestApplication> {
           return;
         }
 
+        // Check if origin matches vercel.app for easier preview deployments if needed
+        if (origin.endsWith('.vercel.app')) {
+          callback(null, true);
+          return;
+        }
+
         callback(new Error('Not allowed by CORS'), false);
       },
       credentials: true,
+      methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+      allowedHeaders: 'Content-Type, Accept, Authorization',
     });
 
     app.use('/payments/webhook', raw({ type: 'application/json' }));
