@@ -10,6 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AuthGuard } from '@nestjs/passport';
 import { seconds, Throttle } from '@nestjs/throttler';
 import { Response, Request as ExpressRequest } from 'express';
 import { AuthService } from './auth.service';
@@ -49,6 +50,26 @@ export class AuthController {
     const { user, tokens } = await this.authService.login(dto);
     this.setAuthCookies(res, tokens);
     return { user };
+  }
+
+  @Get('google')
+  @UseGuards(AuthGuard('google'))
+  async googleAuth() {
+    // Initiates the Google OAuth flow
+  }
+
+  @Get('google/callback')
+  @UseGuards(AuthGuard('google'))
+  async googleAuthCallback(
+    @Request() req: any,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { user, tokens } = await this.authService.googleLogin(req.user);
+    this.setAuthCookies(res, tokens);
+
+    // Redirect to frontend dashboard
+    const frontendUrl = this.configService.get<string>('frontendUrl') || 'http://localhost:3000';
+    res.redirect(`${frontendUrl}/dashboard`);
   }
 
   @Post('refresh')
