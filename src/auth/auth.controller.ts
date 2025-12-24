@@ -68,9 +68,7 @@ export class AuthController {
     this.setAuthCookies(res, tokens);
 
     // Redirect to frontend dashboard
-    const frontendUrl =
-      this.configService.get<string>('frontend.url') ||
-      'http://localhost:3000';
+    const frontendUrl = this.getFrontendBaseUrl();
     res.redirect(`${frontendUrl}/dashboard`);
   }
 
@@ -199,5 +197,17 @@ export class AuthController {
       default:
         return value * 1000;
     }
+  }
+
+  private getFrontendBaseUrl() {
+    const raw =
+      this.configService.get<string>('frontend.url') ||
+      'http://localhost:3000';
+    const primary = raw
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean)[0];
+    const base = primary || 'http://localhost:3000';
+    return base.endsWith('/') ? base.slice(0, -1) : base;
   }
 }
