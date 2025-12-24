@@ -68,7 +68,9 @@ export class AuthController {
     this.setAuthCookies(res, tokens);
 
     // Redirect to frontend dashboard
-    const frontendUrl = this.configService.get<string>('frontendUrl') || 'http://localhost:3000';
+    const frontendUrl =
+      this.configService.get<string>('frontend.url') ||
+      'http://localhost:3000';
     res.redirect(`${frontendUrl}/dashboard`);
   }
 
