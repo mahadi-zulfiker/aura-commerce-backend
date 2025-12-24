@@ -123,26 +123,33 @@ export class AuthController {
       tokens.refreshExpiresAt.getTime() - Date.now(),
     );
 
-    res.cookie('access_token', tokens.accessToken, {
+    const cookieOptions: any = {
       httpOnly: true,
-      secure: true, // Always true for cross-site cookies to work on some mobile browsers
-      sameSite: 'none', // Needed for cross-site cookie sharing
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax', // Correct: sameSite none requires secure
       path: '/',
+    };
+
+    res.cookie('access_token', tokens.accessToken, {
+      ...cookieOptions,
       maxAge: accessMaxAge,
     });
 
     res.cookie('refresh_token', tokens.refreshToken, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'none',
-      path: '/',
+      ...cookieOptions,
       maxAge: refreshMaxAge,
     });
   }
 
   private clearAuthCookies(res: Response) {
-    res.clearCookie('access_token', { path: '/' });
-    res.clearCookie('refresh_token', { path: '/' });
+    const isProd = this.configService.get<string>('nodeEnv') === 'production';
+    const cookieOptions: any = {
+      path: '/',
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
+    };
+    res.clearCookie('access_token', cookieOptions);
+    res.clearCookie('refresh_token', cookieOptions);
   }
 
   private getAccessTokenMaxAge() {
