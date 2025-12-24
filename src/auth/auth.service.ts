@@ -27,7 +27,7 @@ export class AuthService {
     private jwtService: JwtService,
     private configService: ConfigService,
     private emailService: EmailService,
-  ) {}
+  ) { }
 
   async register(dto: RegisterDto) {
     const existingUser = await this.prisma.user.findUnique({
@@ -195,7 +195,7 @@ export class AuthService {
       subject: 'Reset your Aura Commerce password',
       html: `
         <p>Hello ${user.firstName ?? 'there'},</p>
-        <p>Use the token below to reset your password. The token expires in 1 hour.</p>
+        <p>Use the PIN below to reset your password. The PIN expires in 1 hour.</p>
         <p><strong>${resetToken}</strong></p>
       `,
     });
@@ -332,14 +332,14 @@ export class AuthService {
       subject: 'Verify your Aura Commerce email',
       html: `
         <p>Welcome to Aura Commerce!</p>
-        <p>Please verify your email with the token below:</p>
+        <p>Please verify your email with the PIN below:</p>
         <p><strong>${token}</strong></p>
       `,
     });
   }
 
   private generateToken() {
-    return randomBytes(32).toString('hex');
+    return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
   private generateRefreshToken() {

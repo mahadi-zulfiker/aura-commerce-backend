@@ -125,16 +125,16 @@ export class AuthController {
 
     res.cookie('access_token', tokens.accessToken, {
       httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? 'none' : 'lax',
+      secure: true, // Always true for cross-site cookies to work on some mobile browsers
+      sameSite: 'none', // Needed for cross-site cookie sharing
       path: '/',
       maxAge: accessMaxAge,
     });
 
     res.cookie('refresh_token', tokens.refreshToken, {
       httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? 'none' : 'lax',
+      secure: true,
+      sameSite: 'none',
       path: '/',
       maxAge: refreshMaxAge,
     });
